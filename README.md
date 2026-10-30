@@ -1,3 +1,13 @@
+---
+title: Dynamic Bus Pricing Intelligence
+emoji: 🚌
+colorFrom: red
+colorTo: orange
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # redBus Competitor Dynamic Pricing & Relational Storage Pipeline
 
 A modular, production-grade market intelligence and dynamic pricing data pipeline for intercity bus operators on redBus (`redbus.in`), built with **Python 3.11**, **Playwright**, and **SQLite**.

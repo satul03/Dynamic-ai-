@@ -1,38 +1,41 @@
 # =============================================================================
 # Dockerfile - RedBus Dynamic Pricing Intelligence Platform
-# Supports Streamlit Web Dashboard + Playwright Headless Scraping
+# Compatible with: Hugging Face Spaces (Port 7860), Render, Railway, Cloud Run
 # =============================================================================
 
-# Base image with Python 3.11 and official Playwright Linux browser dependencies
 FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
-# Set working directory inside container
-WORKDIR /app
-
-# Prevent Python from writing .pyc files and buffer stdout
-ENV PYTHONUNBUFFERED=1 \
+# Set up user with UID 1000 for Hugging Face Spaces compatibility
+RUN useradd -m -u 1000 user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    STREAMLIT_SERVER_PORT=8501 \
-    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-# Copy requirements and install
+WORKDIR $HOME/app
+
+# Install dependencies as root
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Chromium and Firefox browser binaries with Playwright
+# Install Playwright browser binaries
 RUN playwright install chromium firefox
 
-# Copy the application code
-COPY . .
+# Copy application files and grant full ownership to user 1000
+COPY --chown=user:user . $HOME/app
+RUN chown -R user:user $HOME/app && chmod -R 777 $HOME/app
 
-# Expose default Streamlit port
-EXPOSE 8501
+# Switch to non-root user
+USER user
 
-# Container healthcheck
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+# Expose default Hugging Face (7860) and Streamlit (8501) ports
+EXPOSE 7860 8501
 
-# Start the Streamlit server
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Healthcheck
+HEALTHCHECK CMD curl --fail http://localhost:${PORT:-7860}/_stcore/health || exit 1
+
+# Launch Streamlit dynamically on PORT (defaults to 7860 for Hugging Face)
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-7860} --server.address=0.0.0.0"]
