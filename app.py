@@ -138,6 +138,14 @@ st.markdown("""
         padding: 10px 18px;
         font-weight: 600;
     }
+
+    /* Equal Height Card Grid & Alignment */
+    div[data-testid="stColumn"] > div > div[data-testid="stVerticalBlockBorderWrapper"] {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1099,11 +1107,17 @@ with tab_3hr_compare:
         # ---------------------------------------------------------------------
         # Section 1: 24×7 CONTINUOUS 3-HOUR WINDOW SUMMARY STRIP (8 BLOCKS)
         # ---------------------------------------------------------------------
-        sec1_header_col1, sec1_header_col2 = st.columns([3, 2])
-        with sec1_header_col1:
-            st.markdown("#### 1. 24×7 Time-of-Day Departure Windows (3-Hour Blocks)")
-            st.caption("Continuous market benchmark comparing fare minimums, medians, and surge peaks across the entire 24-hour operating cycle.")
-        with sec1_header_col2:
+        st.markdown("#### 1. 24×7 Time-of-Day Departure Windows (3-Hour Blocks)")
+        st.caption("Continuous market benchmark comparing fare minimums, medians, and surge peaks across the entire 24-hour operating cycle.")
+
+        # Active Inspector Slot State (defaults to best value slot if available, else slot 2: 06:00-09:00)
+        if "tab2_active_inspect_slot" not in st.session_state:
+            default_slot = best_val_idx if best_val_idx >= 0 else 2
+            st.session_state["tab2_active_inspect_slot"] = default_slot
+
+        # Toolbar Row (Well-proportioned columns to avoid clipping)
+        sec1_tb_col1, sec1_tb_col2, sec1_tb_col3 = st.columns([2.4, 2.0, 1.8])
+        with sec1_tb_col1:
             my_service_brand = st.selectbox(
                 "🏷️ Designate 'My Service' Brand (Optional):",
                 options=["-- None (Benchmark Competitors Only) --"] + all_route_ops,
@@ -1111,7 +1125,81 @@ with tab_3hr_compare:
                 key="global_my_service_brand",
                 help="Tags your selected bus brand as '⭐ My Service' across all slot cards and tabular matrices."
             )
+        with sec1_tb_col2:
+            sec1_layout_mode = st.radio(
+                "📐 Slot Matrix Layout Mode:",
+                options=["🖥️ Full-Width Inspector (Fit to Screen)", "📱 Inline Card Accordion"],
+                index=0,
+                horizontal=True,
+                key="tab2_sec1_view_mode",
+                help="Full-Width Inspector keeps all 8 cards uniform and displays the detailed matrix across the full screen width without distortion."
+            )
+        with sec1_tb_col3:
+            slot_picker_options = ["❌ None (Summary Cards Only)"] + [f"{w['icon']} {w['label']} ({w['period']})" for w in TIME_WINDOWS_3HR]
+            curr_slot_val = st.session_state.get("tab2_active_inspect_slot")
+            curr_picker_idx = (curr_slot_val + 1) if (curr_slot_val is not None and 0 <= curr_slot_val < 8) else 0
 
+            def on_quick_slot_change():
+                val = st.session_state["quick_slot_selector_dropdown"]
+                if val.startswith("❌"):
+                    st.session_state["tab2_active_inspect_slot"] = None
+                else:
+                    for w in TIME_WINDOWS_3HR:
+                        if w["label"] in val:
+                            st.session_state["tab2_active_inspect_slot"] = w["index"]
+                            break
+
+            st.selectbox(
+                "⚡ Active Slot Inspector:",
+                options=slot_picker_options,
+                index=curr_picker_idx,
+                key="quick_slot_selector_dropdown",
+                on_change=on_quick_slot_change,
+                help="Select any time window to open its Competitor Customizer and Enterprise Pricing Matrix"
+            )
+
+        is_my_brand_active = bool(my_service_brand and my_service_brand != "-- None (Benchmark Competitors Only) --")
+
+        # Function to build enterprise table rows
+        def build_slot_pricing_table(slot_services_df, is_my_service_active, brand_name):
+            if slot_services_df.empty:
+                return pd.DataFrame()
+            table_rows = []
+            for _, r in slot_services_df.iterrows():
+                dep_str = str(r.get("departure_time", "—"))
+                dep_clean = dep_str[:5] if ":" in dep_str else dep_str
+                
+                op_raw = str(r.get("operator_name", "—"))
+                if is_my_service_active and op_raw.lower() == brand_name.lower():
+                    op_display = f"⭐ My Service ({op_raw})"
+                else:
+                    op_display = op_raw
+                
+                b_type = str(r.get("bus_type", "Standard Coach"))
+                fare_str = f"₹{int(r['effective_fare']):,}" if pd.notnull(r.get('effective_fare')) else "—"
+                seats_cnt = int(r.get("seats_available", 0)) if pd.notnull(r.get("seats_available")) else 0
+                
+                table_rows.append({
+                    "Time": dep_clean,
+                    "Service (Operator Name)": op_display,
+                    "Service Type (Bus/Coach model)": b_type,
+                    "Fare (₹)": fare_str,
+                    "Seats Left": seats_cnt
+                })
+            return pd.DataFrame(table_rows)
+
+        # Helper callback to toggle slot inspector
+        def toggle_slot_inspect(slot_id):
+            if st.session_state.get("tab2_active_inspect_slot") == slot_id:
+                st.session_state["tab2_active_inspect_slot"] = None
+            else:
+                st.session_state["tab2_active_inspect_slot"] = slot_id
+
+        # Helper callback to set slot operators
+        def set_slot_custom_ops(slot_id, ops_list):
+            st.session_state[f"slot_custom_ops_{slot_id}"] = [op for op in ops_list if op in all_route_ops]
+
+        # Render Slot KPI Card
         def render_slot_card(w_data, container_col):
             slot_idx = w_data["index"]
             slot_df_full = df_3hr[df_3hr["win_idx"] == slot_idx]
@@ -1122,13 +1210,11 @@ with tab_3hr_compare:
             if slot_key not in st.session_state:
                 st.session_state[slot_key] = slot_avail_ops
             
-            # Sanitize in case route changed
             current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
             if not current_selected and slot_avail_ops:
                 current_selected = slot_avail_ops
                 st.session_state[slot_key] = current_selected
 
-            # Active subset based on selection
             slot_filtered = slot_df_full[slot_df_full["operator_name"].isin(current_selected)]
             
             if not slot_filtered.empty:
@@ -1140,6 +1226,8 @@ with tab_3hr_compare:
             else:
                 slot_med = slot_min = slot_max = None
                 slot_buses = slot_ops = 0
+
+            is_inspecting_this = (st.session_state.get("tab2_active_inspect_slot") == slot_idx)
 
             with container_col:
                 with st.container(border=True):
@@ -1158,7 +1246,6 @@ with tab_3hr_compare:
                     st.caption(f"Range: **{range_val}** • 🚍 **{slot_buses}** buses · **{slot_ops}** ops")
                     
                     # Highlight 'My Service' if operating in this window
-                    is_my_brand_active = bool(my_service_brand and my_service_brand != "-- None (Benchmark Competitors Only) --")
                     if is_my_brand_active:
                         my_buses = slot_df_full[slot_df_full["operator_name"] == my_service_brand]
                         if not my_buses.empty:
@@ -1169,95 +1256,63 @@ with tab_3hr_compare:
                                 st.markdown(f"<small style='color:#10B981; font-weight:600;'>⭐ <b>My Service:</b> ₹{int(my_med):,} ({sign}₹{int(delta_p):,} vs Mkt)</small>", unsafe_allow_html=True)
                             else:
                                 st.markdown(f"<small style='color:#10B981; font-weight:600;'>⭐ <b>My Service:</b> ₹{int(my_med):,}</small>", unsafe_allow_html=True)
-
-                    # ---------------------------------------------------------
-                    # 1. Dynamic Customization: Collapsible Add/Edit Menu
-                    # ---------------------------------------------------------
-                    with st.expander("➕ Add or Edit Competitors", expanded=False):
-                        st.markdown(f"**Competitor Customization ({w_data['label']})**")
-                        
-                        # Quick preset buttons inside slot expander
-                        btn_c1, btn_c2, btn_c3 = st.columns(3)
-                        def _set_slot_ops(target_idx, target_ops):
-                            st.session_state[f"slot_custom_ops_{target_idx}"] = target_ops
-
-                        with btn_c1:
-                            st.button("All in Slot", key=f"btn_all_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
-                        with btn_c2:
-                            top3_ops = slot_df_full["operator_name"].value_counts().head(3).index.tolist()
-                            st.button("Top 3", key=f"btn_top3_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, top3_ops), use_container_width=True)
-                        with btn_c3:
-                            st.button("Reset", key=f"btn_reset_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
-
-                        # 2. Multi-Operator Filtering Dropdown
-                        chosen_ops = st.multiselect(
-                            "Filter / Add Competitors in Slot:",
-                            options=all_route_ops,
-                            default=st.session_state[slot_key],
-                            key=f"ms_slot_{slot_idx}",
-                            placeholder="Select competitors (e.g. FlixBus, NueGo, zingbus plus...)"
-                        )
-                        st.session_state[slot_key] = chosen_ops
-                        
-                        # Active services in slot sorted by departure time and fare
-                        slot_display_df = slot_df_full[slot_df_full["operator_name"].isin(chosen_ops)].sort_values(
-                            by=["departure_time", "effective_fare"], ascending=[True, True]
-                        )
-
-                        # 3. Clean Tabular Breakdown
-                        st.markdown("##### 📋 Enterprise Pricing Matrix")
-                        if not slot_display_df.empty:
-                            table_rows = []
-                            for _, r in slot_display_df.iterrows():
-                                dep_str = str(r.get("departure_time", "—"))
-                                dep_clean = dep_str[:5] if ":" in dep_str else dep_str
-                                
-                                op_raw = str(r.get("operator_name", "—"))
-                                if is_my_brand_active and op_raw.lower() == my_service_brand.lower():
-                                    op_display = f"⭐ My Service ({op_raw})"
-                                else:
-                                    op_display = op_raw
-                                
-                                b_type = str(r.get("bus_type", "Standard Coach"))
-                                fare_str = f"₹{int(r['effective_fare']):,}" if pd.notnull(r.get('effective_fare')) else "—"
-                                seats_cnt = int(r.get("seats_available", 0)) if pd.notnull(r.get("seats_available")) else 0
-                                
-                                table_rows.append({
-                                    "Time": dep_clean,
-                                    "Service (Operator Name)": op_display,
-                                    "Service Type (Bus/Coach model)": b_type,
-                                    "Fare (₹)": fare_str,
-                                    "Seats Left": seats_cnt
-                                })
-                            
-                            clean_tbl = pd.DataFrame(table_rows)
-                            st.dataframe(
-                                clean_tbl,
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config={
-                                    "Time": st.column_config.TextColumn("Time", width="small"),
-                                    "Service (Operator Name)": st.column_config.TextColumn("Service (Operator Name)", width="medium"),
-                                    "Service Type (Bus/Coach model)": st.column_config.TextColumn("Service Type (Bus/Coach model)", width="medium"),
-                                    "Fare (₹)": st.column_config.TextColumn("Fare (₹)", width="small"),
-                                    "Seats Left": st.column_config.NumberColumn("Seats Left", width="small"),
-                                }
-                            )
-                            
-                            # Export CSV button for this specific slot
-                            csv_slot = clean_tbl.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label=f"📥 Download {w_data['label']} Table (CSV)",
-                                data=csv_slot,
-                                file_name=f"pricing_matrix_{w_data['label'].replace(':', '').replace(' ', '_')}_{selected_doj}.csv",
-                                mime="text/csv",
-                                key=f"csv_slot_{slot_idx}",
-                                use_container_width=True
-                            )
                         else:
-                            st.info("No competitor bus services match your active selection in this time slot.")
+                            st.markdown("<small style='color:#6B7280;'>⭐ My Service: No departures</small>", unsafe_allow_html=True)
 
-        # Render in 4 columns x 2 rows with clean container styling and collapsible breakdown
+                    if sec1_layout_mode == "🖥️ Full-Width Inspector (Fit to Screen)":
+                        # Clean uniform button that toggles the full-width inspector below
+                        btn_label = "✅ Inspecting Below ▴" if is_inspecting_this else "➕ Add / Edit Competitors ▾"
+                        btn_style = "primary" if is_inspecting_this else "secondary"
+                        st.button(
+                            btn_label,
+                            key=f"btn_card_slot_{slot_idx}",
+                            type=btn_style,
+                            on_click=toggle_slot_inspect,
+                            args=(slot_idx,),
+                            use_container_width=True,
+                            help=f"Inspect competitor breakdown and pricing matrix for {w_data['label']}"
+                        )
+                    else:
+                        # Inline Card Accordion Mode
+                        with st.expander("➕ Add or Edit Competitors", expanded=is_inspecting_this):
+                            st.markdown(f"**Customization ({w_data['label']})**")
+                            btn_c1, btn_c2, btn_c3 = st.columns(3)
+                            with btn_c1:
+                                st.button("All", key=f"btn_all_{slot_idx}", on_click=set_slot_custom_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
+                            with btn_c2:
+                                top3_ops = slot_df_full["operator_name"].value_counts().head(3).index.tolist()
+                                st.button("Top 3", key=f"btn_top3_{slot_idx}", on_click=set_slot_custom_ops, args=(slot_idx, top3_ops), use_container_width=True)
+                            with btn_c3:
+                                st.button("Reset", key=f"btn_reset_{slot_idx}", on_click=set_slot_custom_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
+
+                            chosen_ops = st.multiselect(
+                                "Competitors in Slot:",
+                                options=all_route_ops,
+                                default=st.session_state[slot_key],
+                                key=f"ms_slot_{slot_idx}",
+                                placeholder="Select competitors..."
+                            )
+                            st.session_state[slot_key] = chosen_ops
+
+                            slot_display_df = slot_df_full[slot_df_full["operator_name"].isin(chosen_ops)].sort_values(
+                                by=["departure_time", "effective_fare"], ascending=[True, True]
+                            )
+                            clean_tbl = build_slot_pricing_table(slot_display_df, is_my_brand_active, my_service_brand)
+                            if not clean_tbl.empty:
+                                st.dataframe(clean_tbl, use_container_width=True, hide_index=True)
+                                csv_slot = clean_tbl.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 CSV",
+                                    data=csv_slot,
+                                    file_name=f"pricing_matrix_{w_data['label'].replace(':', '').replace(' ', '_')}.csv",
+                                    mime="text/csv",
+                                    key=f"csv_slot_{slot_idx}",
+                                    use_container_width=True
+                                )
+                            else:
+                                st.caption("No matching buses.")
+
+        # Render the 8 cards in 4 columns x 2 rows (strictly uniform and proportional)
         row1_cols = st.columns(4)
         for i in range(4):
             render_slot_card(win_stats[i], row1_cols[i])
@@ -1265,6 +1320,128 @@ with tab_3hr_compare:
         row2_cols = st.columns(4)
         for i in range(4, 8):
             render_slot_card(win_stats[i], row2_cols[i - 4])
+
+        # ---------------------------------------------------------------------
+        # DEDICATED FULL-WIDTH SLOT INSPECTOR PANEL (FIT TO SCREEN)
+        # ---------------------------------------------------------------------
+        active_inspect_slot = st.session_state.get("tab2_active_inspect_slot")
+        if sec1_layout_mode == "🖥️ Full-Width Inspector (Fit to Screen)" and active_inspect_slot is not None and 0 <= active_inspect_slot < 8:
+            active_w = TIME_WINDOWS_3HR[active_inspect_slot]
+            slot_df_full = df_3hr[df_3hr["win_idx"] == active_inspect_slot]
+            slot_avail_ops = sorted(slot_df_full["operator_name"].dropna().unique().tolist())
+            slot_key = f"slot_custom_ops_{active_inspect_slot}"
+            
+            if slot_key not in st.session_state:
+                st.session_state[slot_key] = slot_avail_ops
+
+            current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
+            if not current_selected and slot_avail_ops:
+                current_selected = slot_avail_ops
+                st.session_state[slot_key] = current_selected
+
+            slot_filtered = slot_df_full[slot_df_full["operator_name"].isin(current_selected)]
+            
+            if not slot_filtered.empty:
+                slot_med = slot_filtered["effective_fare"].median()
+                slot_min = slot_filtered["effective_fare"].min()
+                slot_max = slot_filtered["effective_fare"].max()
+                slot_buses = len(slot_filtered)
+                slot_ops = slot_filtered["operator_name"].nunique()
+                slot_seats = int(slot_filtered["seats_available"].sum())
+            else:
+                slot_med = slot_min = slot_max = None
+                slot_buses = slot_ops = slot_seats = 0
+
+            st.write("")
+            with st.container(border=True):
+                # Header with Title and Close Button
+                insp_hdr_col1, insp_hdr_col2 = st.columns([5, 1])
+                with insp_hdr_col1:
+                    st.markdown(f"### 📋 Slot Competitor Customizer & Enterprise Pricing Matrix — {active_w['icon']} {active_w['label']} ({active_w['period']})")
+                    st.caption(f"Isolating **{len(slot_df_full)}** bus departures and **{len(slot_avail_ops)}** competitors in this 3-hour window. Adjust tracked competitors below to recalibrate dynamic pricing benchmarks.")
+                with insp_hdr_col2:
+                    st.button("✖️ Close Inspector", key="btn_close_full_inspector", on_click=toggle_slot_inspect, args=(active_inspect_slot,), use_container_width=True)
+
+                # 4-KPI Metric Strip for Active Window
+                kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+                with kpi_col1:
+                    med_str = f"₹{int(slot_med):,}" if slot_med is not None else "—"
+                    st.metric("Dynamic Median Fare", med_str, help="Median effective fare of all active competitors in this slot")
+                with kpi_col2:
+                    min_str = f"₹{int(slot_min):,}" if slot_min is not None else "—"
+                    st.metric("Lowest Market Fare", min_str, help="Minimum ticket price currently available in this slot")
+                with kpi_col3:
+                    max_str = f"₹{int(slot_max):,}" if slot_max is not None else "—"
+                    st.metric("Peak Surge Fare", max_str, help="Highest premium fare observed in this window")
+                with kpi_col4:
+                    st.metric("Capacity & Operators", f"{slot_buses} Buses · {slot_seats} Seats", f"{slot_ops} Competitors")
+
+                st.markdown("---")
+
+                # Multi-Operator Filtering Toolbar (Full Width - No Stacking!)
+                st.markdown("##### ➕ Multi-Operator Competitor Filtering")
+                filter_c1, filter_c2 = st.columns([3.5, 2.5])
+                with filter_c1:
+                    selected_ops_insp = st.multiselect(
+                        f"Select Competitors to benchmark in {active_w['label']}:",
+                        options=all_route_ops,
+                        default=st.session_state[slot_key],
+                        key=f"ms_inspector_slot_{active_inspect_slot}",
+                        placeholder="Choose competitors (e.g. FlixBus, NueGo, zingbus plus, LeafyBus...)"
+                    )
+                    st.session_state[slot_key] = selected_ops_insp
+                with filter_c2:
+                    st.markdown("<small style='color:#6B7280; font-weight:600;'>⚡ Quick Benchmark Presets:</small>", unsafe_allow_html=True)
+                    p_btn1, p_btn2, p_btn3, p_btn4 = st.columns(4)
+                    with p_btn1:
+                        st.button("⭐ All in Slot", key="insp_btn_all", on_click=set_slot_custom_ops, args=(active_inspect_slot, slot_avail_ops), use_container_width=True)
+                    with p_btn2:
+                        top5_in_slot = slot_df_full["operator_name"].value_counts().head(5).index.tolist()
+                        st.button("🏆 Top 5", key="insp_btn_top5", on_click=set_slot_custom_ops, args=(active_inspect_slot, top5_in_slot), use_container_width=True)
+                    with p_btn3:
+                        rtc_in_slot = slot_df_full[slot_df_full["is_rtc"] == 1]["operator_name"].dropna().unique().tolist()
+                        st.button("🏛️ RTC Gov", key="insp_btn_rtc", on_click=set_slot_custom_ops, args=(active_inspect_slot, rtc_in_slot if rtc_in_slot else slot_avail_ops), use_container_width=True)
+                    with p_btn4:
+                        st.button("🔄 Reset", key="insp_btn_reset", on_click=set_slot_custom_ops, args=(active_inspect_slot, slot_avail_ops), use_container_width=True)
+
+                # Active Services DataFrame (Enterprise Pricing Matrix)
+                slot_display_df = slot_df_full[slot_df_full["operator_name"].isin(st.session_state[slot_key])].sort_values(
+                    by=["departure_time", "effective_fare"], ascending=[True, True]
+                )
+
+                st.markdown("##### 📋 Enterprise Pricing Matrix (Live Bus Listings)")
+                clean_tbl = build_slot_pricing_table(slot_display_df, is_my_brand_active, my_service_brand)
+
+                if not clean_tbl.empty:
+                    st.dataframe(
+                        clean_tbl,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Time": st.column_config.TextColumn("Time", width="small"),
+                            "Service (Operator Name)": st.column_config.TextColumn("Service (Operator Name)", width="large"),
+                            "Service Type (Bus/Coach model)": st.column_config.TextColumn("Service Type (Bus/Coach model)", width="large"),
+                            "Fare (₹)": st.column_config.TextColumn("Fare (₹)", width="medium"),
+                            "Seats Left": st.column_config.NumberColumn("Seats Left", width="small"),
+                        }
+                    )
+
+                    # Export & Action Footer
+                    dl_c1, dl_c2 = st.columns([1, 3])
+                    with dl_c1:
+                        csv_slot = clean_tbl.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label=f"📥 Download {active_w['label']} Matrix (CSV)",
+                            data=csv_slot,
+                            file_name=f"pricing_matrix_{active_w['label'].replace(':', '').replace(' ', '_')}_{selected_doj}.csv",
+                            mime="text/csv",
+                            key=f"csv_inspector_slot_{active_inspect_slot}",
+                            use_container_width=True
+                        )
+                    with dl_c2:
+                        st.caption(f"Showing **{len(clean_tbl)}** bus services matching **{len(selected_ops_insp)}** selected operators in this window.")
+                else:
+                    st.info("No competitor bus services match your active operator selection for this time slot. Click '⭐ All in Slot' or select operators above.")
 
         st.markdown("---")
 
