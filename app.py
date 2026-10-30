@@ -1211,7 +1211,10 @@ with tab_3hr_compare:
 
         # Helper callback to set slot operators
         def set_slot_custom_ops(slot_id, ops_list):
-            st.session_state[f"slot_custom_ops_{slot_id}"] = [op for op in ops_list if op in all_route_ops]
+            target_ops = [op for op in ops_list if op in all_route_ops]
+            st.session_state[f"slot_custom_ops_{slot_id}"] = target_ops
+            st.session_state[f"ms_inspector_slot_{slot_id}"] = target_ops
+            st.session_state[f"ms_slot_{slot_id}"] = target_ops
 
         # Render Slot KPI Card
         def render_slot_card(w_data, container_col):
@@ -1221,13 +1224,17 @@ with tab_3hr_compare:
             
             # State key for this slot
             slot_key = f"slot_custom_ops_{slot_idx}"
-            if slot_key not in st.session_state:
-                st.session_state[slot_key] = slot_avail_ops
-            
-            current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
-            if not current_selected and slot_avail_ops:
-                current_selected = slot_avail_ops
+            insp_ms_key = f"ms_inspector_slot_{slot_idx}"
+            if insp_ms_key in st.session_state:
+                current_selected = [op for op in st.session_state[insp_ms_key] if op in all_route_ops]
                 st.session_state[slot_key] = current_selected
+            elif slot_key in st.session_state:
+                current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
+                st.session_state[insp_ms_key] = current_selected
+            else:
+                current_selected = slot_avail_ops
+                st.session_state[slot_key] = slot_avail_ops
+                st.session_state[insp_ms_key] = slot_avail_ops
 
             slot_filtered = slot_df_full[slot_df_full["operator_name"].isin(current_selected)]
             
@@ -1352,14 +1359,19 @@ with tab_3hr_compare:
             slot_df_full = df_3hr[df_3hr["win_idx"] == active_inspect_slot]
             slot_avail_ops = sorted(slot_df_full["operator_name"].dropna().unique().tolist())
             slot_key = f"slot_custom_ops_{active_inspect_slot}"
+            insp_ms_key = f"ms_inspector_slot_{active_inspect_slot}"
             
-            if slot_key not in st.session_state:
-                st.session_state[slot_key] = slot_avail_ops
-
-            current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
-            if not current_selected and slot_avail_ops:
-                current_selected = slot_avail_ops
+            # Ensure both session keys exist and are synchronized
+            if insp_ms_key in st.session_state:
+                current_selected = [op for op in st.session_state[insp_ms_key] if op in all_route_ops]
                 st.session_state[slot_key] = current_selected
+            elif slot_key in st.session_state:
+                current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
+                st.session_state[insp_ms_key] = current_selected
+            else:
+                current_selected = slot_avail_ops
+                st.session_state[slot_key] = slot_avail_ops
+                st.session_state[insp_ms_key] = slot_avail_ops
 
             slot_filtered = slot_df_full[slot_df_full["operator_name"].isin(current_selected)]
             
@@ -1404,11 +1416,14 @@ with tab_3hr_compare:
                 st.markdown("##### ➕ Multi-Operator Competitor Filtering")
                 filter_c1, filter_c2 = st.columns([3.5, 2.5])
                 with filter_c1:
+                    def _on_insp_ms_change():
+                        st.session_state[slot_key] = st.session_state.get(insp_ms_key, [])
+
                     selected_ops_insp = st.multiselect(
                         f"Select Competitors to benchmark in {active_w['label']}:",
                         options=all_route_ops,
-                        default=st.session_state[slot_key],
-                        key=f"ms_inspector_slot_{active_inspect_slot}",
+                        key=insp_ms_key,
+                        on_change=_on_insp_ms_change,
                         placeholder="Choose competitors (e.g. FlixBus, NueGo, zingbus plus, LeafyBus...)"
                     )
                     st.session_state[slot_key] = selected_ops_insp
@@ -1416,15 +1431,47 @@ with tab_3hr_compare:
                     st.markdown("<small style='color:#6B7280; font-weight:600;'>⚡ Quick Benchmark Presets:</small>", unsafe_allow_html=True)
                     p_btn1, p_btn2, p_btn3, p_btn4 = st.columns(4)
                     with p_btn1:
-                        st.button("⭐ All in Slot", key="insp_btn_all", on_click=set_slot_custom_ops, args=(active_inspect_slot, slot_avail_ops), use_container_width=True)
+                        st.button(
+                            "⭐ All in Slot",
+                            key=f"insp_btn_all_{active_inspect_slot}",
+                            on_click=set_slot_custom_ops,
+                            args=(active_inspect_slot, slot_avail_ops),
+                            use_container_width=True,
+                            help="Select all operators with departures in this time slot"
+                        )
                     with p_btn2:
                         top5_in_slot = slot_df_full["operator_name"].value_counts().head(5).index.tolist()
-                        st.button("🏆 Top 5", key="insp_btn_top5", on_click=set_slot_custom_ops, args=(active_inspect_slot, top5_in_slot), use_container_width=True)
+                        if not top5_in_slot:
+                            top5_in_slot = all_route_ops[:5]
+                        st.button(
+                            "🏆 Top 5",
+                            key=f"insp_btn_top5_{active_inspect_slot}",
+                            on_click=set_slot_custom_ops,
+                            args=(active_inspect_slot, top5_in_slot),
+                            use_container_width=True,
+                            help="Select top 5 competitors by service frequency in this slot"
+                        )
                     with p_btn3:
                         rtc_in_slot = slot_df_full[slot_df_full["is_rtc"] == 1]["operator_name"].dropna().unique().tolist()
-                        st.button("🏛️ RTC Gov", key="insp_btn_rtc", on_click=set_slot_custom_ops, args=(active_inspect_slot, rtc_in_slot if rtc_in_slot else slot_avail_ops), use_container_width=True)
+                        all_rtc_route = sorted(df_3hr[df_3hr["is_rtc"] == 1]["operator_name"].dropna().unique().tolist())
+                        rtc_targets = rtc_in_slot if rtc_in_slot else all_rtc_route
+                        st.button(
+                            "🏛️ RTC Gov",
+                            key=f"insp_btn_rtc_{active_inspect_slot}",
+                            on_click=set_slot_custom_ops,
+                            args=(active_inspect_slot, rtc_targets),
+                            use_container_width=True,
+                            help="Filter to state transport corporations"
+                        )
                     with p_btn4:
-                        st.button("🔄 Reset", key="insp_btn_reset", on_click=set_slot_custom_ops, args=(active_inspect_slot, slot_avail_ops), use_container_width=True)
+                        st.button(
+                            "🔄 Reset",
+                            key=f"insp_btn_reset_{active_inspect_slot}",
+                            on_click=set_slot_custom_ops,
+                            args=(active_inspect_slot, slot_avail_ops),
+                            use_container_width=True,
+                            help="Reset selection to all available operators in this slot"
+                        )
 
                 # Active Services DataFrame (Enterprise Pricing Matrix)
                 slot_display_df = slot_df_full[slot_df_full["operator_name"].isin(st.session_state[slot_key])].sort_values(
