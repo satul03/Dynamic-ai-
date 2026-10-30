@@ -1098,8 +1098,8 @@ with tab_3hr_compare:
 
         # Identify Best Value and Peak Surge Window
         valid_medians = win_stats_df.dropna(subset=["median_fare"])
-        best_val_idx = valid_medians.loc[valid_medians["median_fare"].idxmin()]["index"] if not valid_medians.empty else -1
-        surge_idx = valid_medians.loc[valid_medians["median_fare"].idxmax()]["index"] if not valid_medians.empty else -1
+        best_val_idx = int(valid_medians.loc[valid_medians["median_fare"].idxmin()]["index"]) if not valid_medians.empty else -1
+        surge_idx = int(valid_medians.loc[valid_medians["median_fare"].idxmax()]["index"]) if not valid_medians.empty else -1
 
         # Extract all distinct operators on this route
         all_route_ops = sorted(df_3hr["operator_name"].dropna().unique().tolist())
@@ -1111,9 +1111,14 @@ with tab_3hr_compare:
         st.caption("Continuous market benchmark comparing fare minimums, medians, and surge peaks across the entire 24-hour operating cycle.")
 
         # Active Inspector Slot State (defaults to best value slot if available, else slot 2: 06:00-09:00)
-        if "tab2_active_inspect_slot" not in st.session_state:
-            default_slot = best_val_idx if best_val_idx >= 0 else 2
+        if "tab2_active_inspect_slot" not in st.session_state or st.session_state["tab2_active_inspect_slot"] is None:
+            default_slot = int(best_val_idx) if best_val_idx >= 0 else 2
             st.session_state["tab2_active_inspect_slot"] = default_slot
+        else:
+            try:
+                st.session_state["tab2_active_inspect_slot"] = int(st.session_state["tab2_active_inspect_slot"])
+            except Exception:
+                st.session_state["tab2_active_inspect_slot"] = 2
 
         # Toolbar Row (Well-proportioned columns to avoid clipping)
         sec1_tb_col1, sec1_tb_col2, sec1_tb_col3 = st.columns([2.4, 2.0, 1.8])
@@ -1137,22 +1142,29 @@ with tab_3hr_compare:
         with sec1_tb_col3:
             slot_picker_options = ["❌ None (Summary Cards Only)"] + [f"{w['icon']} {w['label']} ({w['period']})" for w in TIME_WINDOWS_3HR]
             curr_slot_val = st.session_state.get("tab2_active_inspect_slot")
-            curr_picker_idx = (curr_slot_val + 1) if (curr_slot_val is not None and 0 <= curr_slot_val < 8) else 0
+            if curr_slot_val is not None:
+                try:
+                    slot_int = int(curr_slot_val)
+                    curr_picker_idx = int(slot_int + 1) if 0 <= slot_int < 8 else 0
+                except Exception:
+                    curr_picker_idx = 0
+            else:
+                curr_picker_idx = 0
 
             def on_quick_slot_change():
-                val = st.session_state["quick_slot_selector_dropdown"]
+                val = st.session_state.get("quick_slot_selector_dropdown", "")
                 if val.startswith("❌"):
                     st.session_state["tab2_active_inspect_slot"] = None
                 else:
                     for w in TIME_WINDOWS_3HR:
                         if w["label"] in val:
-                            st.session_state["tab2_active_inspect_slot"] = w["index"]
+                            st.session_state["tab2_active_inspect_slot"] = int(w["index"])
                             break
 
             st.selectbox(
                 "⚡ Active Slot Inspector:",
                 options=slot_picker_options,
-                index=curr_picker_idx,
+                index=int(curr_picker_idx),
                 key="quick_slot_selector_dropdown",
                 on_change=on_quick_slot_change,
                 help="Select any time window to open its Competitor Customizer and Enterprise Pricing Matrix"
@@ -1190,7 +1202,9 @@ with tab_3hr_compare:
 
         # Helper callback to toggle slot inspector
         def toggle_slot_inspect(slot_id):
-            if st.session_state.get("tab2_active_inspect_slot") == slot_id:
+            slot_id = int(slot_id)
+            curr = st.session_state.get("tab2_active_inspect_slot")
+            if curr is not None and int(curr) == slot_id:
                 st.session_state["tab2_active_inspect_slot"] = None
             else:
                 st.session_state["tab2_active_inspect_slot"] = slot_id
@@ -1227,7 +1241,8 @@ with tab_3hr_compare:
                 slot_med = slot_min = slot_max = None
                 slot_buses = slot_ops = 0
 
-            is_inspecting_this = (st.session_state.get("tab2_active_inspect_slot") == slot_idx)
+            curr_insp_val = st.session_state.get("tab2_active_inspect_slot")
+            is_inspecting_this = (curr_insp_val is not None and int(curr_insp_val) == int(slot_idx))
 
             with container_col:
                 with st.container(border=True):
@@ -1324,7 +1339,14 @@ with tab_3hr_compare:
         # ---------------------------------------------------------------------
         # DEDICATED FULL-WIDTH SLOT INSPECTOR PANEL (FIT TO SCREEN)
         # ---------------------------------------------------------------------
-        active_inspect_slot = st.session_state.get("tab2_active_inspect_slot")
+        raw_insp_slot = st.session_state.get("tab2_active_inspect_slot")
+        active_inspect_slot = None
+        if raw_insp_slot is not None:
+            try:
+                active_inspect_slot = int(raw_insp_slot)
+            except Exception:
+                active_inspect_slot = None
+
         if sec1_layout_mode == "🖥️ Full-Width Inspector (Fit to Screen)" and active_inspect_slot is not None and 0 <= active_inspect_slot < 8:
             active_w = TIME_WINDOWS_3HR[active_inspect_slot]
             slot_df_full = df_3hr[df_3hr["win_idx"] == active_inspect_slot]
