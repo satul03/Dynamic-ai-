@@ -1,0 +1,37 @@
+{
+  "schedule_times_ist": [
+    "08:00",
+    "14:00",
+    "19:00",
+    "22:00"
+  ],
+  "forward_booking_windows": [
+    0,
+    1,
+    3,
+    7
+  ],
+  "routes": [
+    {
+      "from_id": 733,
+      "from_name": "Delhi",
+      "to_id": 807,
+      "to_name": "Jaipur (Rajasthan)",
+      "enabled": true
+    },
+    {
+      "from_id": 733,
+      "from_name": "Delhi",
+      "to_id": 1290,
+      "to_name": "Agra",
+      "enabled": true
+    },
+    {
+      "from_id": 807,
+      "from_name": "Jaipur (Rajasthan)",
+      "to_id": 733,
+      "to_name": "Delhi",
+      "enabled": true
+    }
+  ]
+}
