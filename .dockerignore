@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env
+*.log
+bus_pricing_intelligence.db-shm
+bus_pricing_intelligence.db-wal
