@@ -1093,48 +1093,178 @@ with tab_3hr_compare:
         best_val_idx = valid_medians.loc[valid_medians["median_fare"].idxmin()]["index"] if not valid_medians.empty else -1
         surge_idx = valid_medians.loc[valid_medians["median_fare"].idxmax()]["index"] if not valid_medians.empty else -1
 
+        # Extract all distinct operators on this route
+        all_route_ops = sorted(df_3hr["operator_name"].dropna().unique().tolist())
+
         # ---------------------------------------------------------------------
         # Section 1: 24×7 CONTINUOUS 3-HOUR WINDOW SUMMARY STRIP (8 BLOCKS)
         # ---------------------------------------------------------------------
-        st.markdown("#### 1. 24×7 Time-of-Day Departure Windows (3-Hour Blocks)")
-        st.caption("Continuous market benchmark comparing fare minimums, medians, and surge peaks across the entire 24-hour operating cycle.")
+        sec1_header_col1, sec1_header_col2 = st.columns([3, 2])
+        with sec1_header_col1:
+            st.markdown("#### 1. 24×7 Time-of-Day Departure Windows (3-Hour Blocks)")
+            st.caption("Continuous market benchmark comparing fare minimums, medians, and surge peaks across the entire 24-hour operating cycle.")
+        with sec1_header_col2:
+            my_service_brand = st.selectbox(
+                "🏷️ Designate 'My Service' Brand (Optional):",
+                options=["-- None (Benchmark Competitors Only) --"] + all_route_ops,
+                index=0,
+                key="global_my_service_brand",
+                help="Tags your selected bus brand as '⭐ My Service' across all slot cards and tabular matrices."
+            )
 
-        # Render in 4 columns x 2 rows with clean container styling
-        row1_cols = st.columns(4)
-        for i in range(4):
-            w_data = win_stats[i]
-            with row1_cols[i]:
+        def render_slot_card(w_data, container_col):
+            slot_idx = w_data["index"]
+            slot_df_full = df_3hr[df_3hr["win_idx"] == slot_idx]
+            slot_avail_ops = sorted(slot_df_full["operator_name"].dropna().unique().tolist())
+            
+            # State key for this slot
+            slot_key = f"slot_custom_ops_{slot_idx}"
+            if slot_key not in st.session_state:
+                st.session_state[slot_key] = slot_avail_ops
+            
+            # Sanitize in case route changed
+            current_selected = [op for op in st.session_state[slot_key] if op in all_route_ops]
+            if not current_selected and slot_avail_ops:
+                current_selected = slot_avail_ops
+                st.session_state[slot_key] = current_selected
+
+            # Active subset based on selection
+            slot_filtered = slot_df_full[slot_df_full["operator_name"].isin(current_selected)]
+            
+            if not slot_filtered.empty:
+                slot_med = slot_filtered["effective_fare"].median()
+                slot_min = slot_filtered["effective_fare"].min()
+                slot_max = slot_filtered["effective_fare"].max()
+                slot_buses = len(slot_filtered)
+                slot_ops = slot_filtered["operator_name"].nunique()
+            else:
+                slot_med = slot_min = slot_max = None
+                slot_buses = slot_ops = 0
+
+            with container_col:
                 with st.container(border=True):
                     badge_str = ""
-                    if w_data["index"] == best_val_idx and w_data["buses"] > 0:
+                    if slot_idx == best_val_idx and slot_buses > 0:
                         badge_str = " :green[**[BEST VALUE]**]"
-                    elif w_data["index"] == surge_idx and w_data["buses"] > 0:
+                    elif slot_idx == surge_idx and slot_buses > 0:
                         badge_str = " :red[**[PEAK SURGE]**]"
 
                     st.markdown(f"**{w_data['icon']} {w_data['label']}**{badge_str}")
                     st.caption(f"{w_data['period']}")
-                    med_val = f"₹{int(w_data['median_fare']):,}" if w_data['median_fare'] is not None else "No Buses"
+                    
+                    med_val = f"₹{int(slot_med):,}" if slot_med is not None else "No Buses"
                     st.metric(label="Median Dynamic Fare", value=med_val)
-                    range_val = f"₹{int(w_data['min_fare']):,} - ₹{int(w_data['max_fare']):,}" if w_data['min_fare'] is not None else "—"
-                    st.caption(f"Range: **{range_val}** • 🚍 **{w_data['buses']}** buses · **{w_data['ops']}** ops")
+                    range_val = f"₹{int(slot_min):,} - ₹{int(slot_max):,}" if slot_min is not None else "—"
+                    st.caption(f"Range: **{range_val}** • 🚍 **{slot_buses}** buses · **{slot_ops}** ops")
+                    
+                    # Highlight 'My Service' if operating in this window
+                    is_my_brand_active = bool(my_service_brand and my_service_brand != "-- None (Benchmark Competitors Only) --")
+                    if is_my_brand_active:
+                        my_buses = slot_df_full[slot_df_full["operator_name"] == my_service_brand]
+                        if not my_buses.empty:
+                            my_med = my_buses["effective_fare"].median()
+                            if slot_med is not None:
+                                delta_p = my_med - slot_med
+                                sign = "+" if delta_p > 0 else ""
+                                st.markdown(f"<small style='color:#10B981; font-weight:600;'>⭐ <b>My Service:</b> ₹{int(my_med):,} ({sign}₹{int(delta_p):,} vs Mkt)</small>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"<small style='color:#10B981; font-weight:600;'>⭐ <b>My Service:</b> ₹{int(my_med):,}</small>", unsafe_allow_html=True)
+
+                    # ---------------------------------------------------------
+                    # 1. Dynamic Customization: Collapsible Add/Edit Menu
+                    # ---------------------------------------------------------
+                    with st.expander("➕ Add or Edit Competitors", expanded=False):
+                        st.markdown(f"**Competitor Customization ({w_data['label']})**")
+                        
+                        # Quick preset buttons inside slot expander
+                        btn_c1, btn_c2, btn_c3 = st.columns(3)
+                        def _set_slot_ops(target_idx, target_ops):
+                            st.session_state[f"slot_custom_ops_{target_idx}"] = target_ops
+
+                        with btn_c1:
+                            st.button("All in Slot", key=f"btn_all_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
+                        with btn_c2:
+                            top3_ops = slot_df_full["operator_name"].value_counts().head(3).index.tolist()
+                            st.button("Top 3", key=f"btn_top3_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, top3_ops), use_container_width=True)
+                        with btn_c3:
+                            st.button("Reset", key=f"btn_reset_{slot_idx}", on_click=_set_slot_ops, args=(slot_idx, slot_avail_ops), use_container_width=True)
+
+                        # 2. Multi-Operator Filtering Dropdown
+                        chosen_ops = st.multiselect(
+                            "Filter / Add Competitors in Slot:",
+                            options=all_route_ops,
+                            default=st.session_state[slot_key],
+                            key=f"ms_slot_{slot_idx}",
+                            placeholder="Select competitors (e.g. FlixBus, NueGo, zingbus plus...)"
+                        )
+                        st.session_state[slot_key] = chosen_ops
+                        
+                        # Active services in slot sorted by departure time and fare
+                        slot_display_df = slot_df_full[slot_df_full["operator_name"].isin(chosen_ops)].sort_values(
+                            by=["departure_time", "effective_fare"], ascending=[True, True]
+                        )
+
+                        # 3. Clean Tabular Breakdown
+                        st.markdown("##### 📋 Enterprise Pricing Matrix")
+                        if not slot_display_df.empty:
+                            table_rows = []
+                            for _, r in slot_display_df.iterrows():
+                                dep_str = str(r.get("departure_time", "—"))
+                                dep_clean = dep_str[:5] if ":" in dep_str else dep_str
+                                
+                                op_raw = str(r.get("operator_name", "—"))
+                                if is_my_brand_active and op_raw.lower() == my_service_brand.lower():
+                                    op_display = f"⭐ My Service ({op_raw})"
+                                else:
+                                    op_display = op_raw
+                                
+                                b_type = str(r.get("bus_type", "Standard Coach"))
+                                fare_str = f"₹{int(r['effective_fare']):,}" if pd.notnull(r.get('effective_fare')) else "—"
+                                seats_cnt = int(r.get("seats_available", 0)) if pd.notnull(r.get("seats_available")) else 0
+                                
+                                table_rows.append({
+                                    "Time": dep_clean,
+                                    "Service (Operator Name)": op_display,
+                                    "Service Type (Bus/Coach model)": b_type,
+                                    "Fare (₹)": fare_str,
+                                    "Seats Left": seats_cnt
+                                })
+                            
+                            clean_tbl = pd.DataFrame(table_rows)
+                            st.dataframe(
+                                clean_tbl,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "Time": st.column_config.TextColumn("Time", width="small"),
+                                    "Service (Operator Name)": st.column_config.TextColumn("Service (Operator Name)", width="medium"),
+                                    "Service Type (Bus/Coach model)": st.column_config.TextColumn("Service Type (Bus/Coach model)", width="medium"),
+                                    "Fare (₹)": st.column_config.TextColumn("Fare (₹)", width="small"),
+                                    "Seats Left": st.column_config.NumberColumn("Seats Left", width="small"),
+                                }
+                            )
+                            
+                            # Export CSV button for this specific slot
+                            csv_slot = clean_tbl.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label=f"📥 Download {w_data['label']} Table (CSV)",
+                                data=csv_slot,
+                                file_name=f"pricing_matrix_{w_data['label'].replace(':', '').replace(' ', '_')}_{selected_doj}.csv",
+                                mime="text/csv",
+                                key=f"csv_slot_{slot_idx}",
+                                use_container_width=True
+                            )
+                        else:
+                            st.info("No competitor bus services match your active selection in this time slot.")
+
+        # Render in 4 columns x 2 rows with clean container styling and collapsible breakdown
+        row1_cols = st.columns(4)
+        for i in range(4):
+            render_slot_card(win_stats[i], row1_cols[i])
 
         row2_cols = st.columns(4)
         for i in range(4, 8):
-            w_data = win_stats[i]
-            with row2_cols[i - 4]:
-                with st.container(border=True):
-                    badge_str = ""
-                    if w_data["index"] == best_val_idx and w_data["buses"] > 0:
-                        badge_str = " :green[**[BEST VALUE]**]"
-                    elif w_data["index"] == surge_idx and w_data["buses"] > 0:
-                        badge_str = " :red[**[PEAK SURGE]**]"
-
-                    st.markdown(f"**{w_data['icon']} {w_data['label']}**{badge_str}")
-                    st.caption(f"{w_data['period']}")
-                    med_val = f"₹{int(w_data['median_fare']):,}" if w_data['median_fare'] is not None else "No Buses"
-                    st.metric(label="Median Dynamic Fare", value=med_val)
-                    range_val = f"₹{int(w_data['min_fare']):,} - ₹{int(w_data['max_fare']):,}" if w_data['min_fare'] is not None else "—"
-                    st.caption(f"Range: **{range_val}** • 🚍 **{w_data['buses']}** buses · **{w_data['ops']}** ops")
+            render_slot_card(win_stats[i], row2_cols[i - 4])
 
         st.markdown("---")
 
