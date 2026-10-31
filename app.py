@@ -36,6 +36,15 @@ from db import (
     DEFAULT_DB_PATH,
 )
 
+# Import security & authentication layer
+from auth import (
+    is_authenticated,
+    render_login_screen,
+    render_sidebar_auth_widget,
+    get_current_user,
+    logout_user
+)
+
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & STYLING
 # -----------------------------------------------------------------------------
@@ -627,8 +636,20 @@ def generate_excel_report(
 
 
 # -----------------------------------------------------------------------------
-# 5. MAIN APP LAYOUT & ROUTING
+# 5. AUTHENTICATION & ACCESS CONTROL GATEWAY
 # -----------------------------------------------------------------------------
+if not is_authenticated():
+    render_login_screen()
+    st.stop()
+
+
+# -----------------------------------------------------------------------------
+# 6. MAIN APP LAYOUT & ROUTING (AUTHENTICATED ONLY)
+# -----------------------------------------------------------------------------
+
+# Render Active User Badge and Sign-Out Button at top of sidebar
+render_sidebar_auth_widget()
+st.sidebar.markdown("---")
 
 # Check database existence and auto-initialize schema & seed cities if needed
 if not check_database_readiness(DB_PATH):
