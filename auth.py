@@ -115,8 +115,12 @@ def verify_firebase_credentials(email: str, password: str) -> Optional[Dict[str,
     Only activates if FIREBASE_WEB_API_KEY is configured in environment or Streamlit secrets.
     """
     firebase_key = os.environ.get("FIREBASE_WEB_API_KEY")
-    if not firebase_key and hasattr(st, "secrets") and "FIREBASE_WEB_API_KEY" in st.secrets:
-        firebase_key = st.secrets["FIREBASE_WEB_API_KEY"]
+    if not firebase_key:
+        try:
+            if hasattr(st, "secrets") and "FIREBASE_WEB_API_KEY" in st.secrets:
+                firebase_key = st.secrets["FIREBASE_WEB_API_KEY"]
+        except Exception:
+            firebase_key = None
 
     if not firebase_key:
         return None  # Firebase not configured, fallback to local store
@@ -205,8 +209,8 @@ def render_login_screen() -> None:
 
             with st.form("login_form", clear_on_submit=False):
                 input_email = st.text_input(
-                    "👤 Email or Username:",
-                    placeholder="e.g. admin@leafybus.com or admin",
+                    "📧 Email:",
+                    placeholder="e.g. admin@leafybus.com",
                     key="login_user_input"
                 )
                 input_password = st.text_input(
@@ -221,7 +225,7 @@ def render_login_screen() -> None:
 
             if submit_login:
                 if not input_email or not input_password:
-                    st.error("⚠️ Please provide both your email/username and password.")
+                    st.error("⚠️ Please provide both your email and password.")
                 else:
                     # 1. Try Firebase Authentication first if configured
                     user_data = verify_firebase_credentials(input_email, input_password)
@@ -236,7 +240,7 @@ def render_login_screen() -> None:
                         st.success(f"✅ Welcome back, **{user_data['full_name']}**! Redirecting...")
                         st.rerun()
                     else:
-                        st.error("❌ Authentication failed: Invalid email, username, or password.")
+                        st.error("❌ Authentication failed: Invalid email or password.")
 
             # Security features footer
             st.markdown("---")
@@ -250,7 +254,7 @@ def render_login_screen() -> None:
         with st.expander("💡 Default Login Credentials (First-Time Setup)", expanded=False):
             st.markdown("""
             **Pre-Configured Administrative Access:**
-            - **Email / Username:** `admin@leafybus.com` *(or simply `admin`)*
+            - **Email:** `admin@leafybus.com`
             - **Password:** `admin123`
             - **Role:** *Revenue Administrator*
             
