@@ -630,38 +630,29 @@ def generate_excel_report(
 # 5. MAIN APP LAYOUT & ROUTING
 # -----------------------------------------------------------------------------
 
-# Check database existence
+# Check database existence and auto-initialize schema & seed cities if needed
 if not check_database_readiness(DB_PATH):
-    st.error("🚨 SQLite Database Not Found or Incomplete!")
-    st.markdown(f"""
-    The intelligence database **`{DB_PATH}`** is not initialized yet.
-    
-    Please run the scraping pipeline CLI in your terminal first to populate routes and competitor data:
-    ```bash
-    # Run verification scrape for Delhi -> Jaipur
-    python main.py --from-id 733 --from-name "Delhi" --to-id 807 --to-name "Jaipur (Rajasthan)" --date "27-Oct-2026"
-
-    # Or Delhi -> Agra
-    python main.py --from-id 733 --from-name "Delhi" --to-id 1290 --to-name "Agra" --date "27-Oct-2026"
-    ```
-    """)
-    if st.button("🔄 Check Again / Initialize Schema"):
-        init_db(DB_PATH)
-        st.rerun()
-    st.stop()
-
+    init_db(DB_PATH)
+    upsert_city(733, "Delhi", "Delhi", "India", DB_PATH)
+    upsert_city(807, "Jaipur (Rajasthan)", "Rajasthan", "India", DB_PATH)
+    upsert_city(1290, "Agra", "Uttar Pradesh", "India", DB_PATH)
 
 # Pre-load dimension tables
 cities_df = load_cities(DB_PATH)
 routes_df = load_available_routes(DB_PATH)
 
 if cities_df.empty:
-    st.warning("No cities found in database. Please run scraper or add cities in Master Directory.")
-    st.stop()
+    upsert_city(733, "Delhi", "Delhi", "India", DB_PATH)
+    upsert_city(807, "Jaipur (Rajasthan)", "Rajasthan", "India", DB_PATH)
+    upsert_city(1290, "Agra", "Uttar Pradesh", "India", DB_PATH)
+    cities_df = load_cities(DB_PATH)
 
 # City mapping
 city_options = dict(zip(cities_df["city_name"], cities_df["city_id"]))
 city_names = list(city_options.keys())
+if not city_names:
+    city_names = ["Delhi", "Jaipur (Rajasthan)", "Agra"]
+    city_options = {"Delhi": 733, "Jaipur (Rajasthan)": 807, "Agra": 1290}
 
 # Default Origin: Delhi (733)
 default_origin_idx = 0
@@ -680,15 +671,17 @@ for idx, name in enumerate(city_names):
 # Sidebar: Route Selector
 st.sidebar.header("🔍 Route & Competitor Filter")
 selected_origin_name = st.sidebar.selectbox("Origin City (From)", options=city_names, index=default_origin_idx)
-selected_origin_id = city_options[selected_origin_name]
+selected_origin_id = city_options.get(selected_origin_name, 733)
 
 dest_candidates = [c for c in city_names if c != selected_origin_name]
+if not dest_candidates:
+    dest_candidates = [c for c in city_names]
 dest_default_idx = 0
 if len(dest_candidates) > 1 and default_dest_idx < len(dest_candidates):
     dest_default_idx = default_dest_idx
 
 selected_dest_name = st.sidebar.selectbox("Destination City (To)", options=dest_candidates, index=dest_default_idx)
-selected_dest_id = city_options[selected_dest_name]
+selected_dest_id = city_options.get(selected_dest_name, 807)
 
 # Check existing dates in DB
 matching_routes = routes_df[

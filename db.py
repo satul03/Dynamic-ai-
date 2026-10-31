@@ -7,6 +7,7 @@ Schema:
 3. fare_snapshots: Fact table for time-series dynamic pricing, load factors, & deals
 """
 
+import os
 import sqlite3
 import json
 import logging
@@ -16,7 +17,8 @@ import pandas as pd
 
 logger = logging.getLogger("BusPricingDB")
 
-DEFAULT_DB_PATH = "bus_pricing_intelligence.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "bus_pricing_intelligence.db")
 
 
 def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
