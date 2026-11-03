@@ -190,7 +190,7 @@ def check_database_readiness(db_path: str = DB_PATH) -> bool:
         return False
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_cities(db_path: str = DB_PATH) -> pd.DataFrame:
     """Loads all registered origin and destination cities."""
     with get_db_connection(db_path) as conn:
@@ -198,7 +198,7 @@ def load_cities(db_path: str = DB_PATH) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_operators(db_path: str = DB_PATH) -> pd.DataFrame:
     """Loads all discovered bus operators."""
     with get_db_connection(db_path) as conn:
@@ -217,7 +217,7 @@ def load_operators(db_path: str = DB_PATH) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_available_routes(db_path: str = DB_PATH) -> pd.DataFrame:
     """Retrieves unique routes (from_city_id, to_city_id, travel_date) currently scraped."""
     with get_db_connection(db_path) as conn:
@@ -255,7 +255,7 @@ def get_last_scraped_at(from_id: int, to_id: int, doj: Optional[str] = None, db_
         return None
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_route_operators(from_id: int, to_id: int, doj: Optional[str] = None, db_path: str = DB_PATH) -> pd.DataFrame:
     """Loads distinct operators offering services on a specific route."""
     with get_db_connection(db_path) as conn:
@@ -281,7 +281,7 @@ def load_route_operators(from_id: int, to_id: int, doj: Optional[str] = None, db
     return df
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_fare_snapshots(
     from_id: int,
     to_id: int,
@@ -406,7 +406,7 @@ def run_live_scrape_ui(
         expanded=True
     ) as status:
         for idx, (f_id, f_name, t_id, t_name, doj) in enumerate(routes_to_scrape, 1):
-            st.markdown(f"🚍 **Route {idx}/{total_routes}:** `{f_name} (ID: {f_id})` $\\rightarrow$ `{t_name} (ID: {t_id})` | Date: `{doj}`")
+            st.markdown(f"🚍 **Route {idx}/{total_routes}:** `{f_name} (ID: {f_id})` ➔ `{t_name} (ID: {t_id})` | Date: `{doj}`")
             proc = execute_live_scrape_process(f_id, f_name, t_id, t_name, doj, days_ahead)
 
             log_box = st.empty()
@@ -425,9 +425,9 @@ def run_live_scrape_ui(
             code = proc.wait()
 
             if code == 0:
-                st.write(f"✅ Successfully ingested live listings for {f_name} $\\rightarrow$ {t_name}!")
+                st.write(f"✅ Successfully ingested live listings for {f_name} ➔ {t_name}!")
             else:
-                st.warning(f"⚠️ Scraping completed with exit code {code} for {f_name} $\\rightarrow$ {t_name}. Proceeding...")
+                st.warning(f"⚠️ Scraping completed with exit code {code} for {f_name} ➔ {t_name}. Proceeding...")
 
         status.update(label="🎉 Fresh dynamic pricing data fetched and saved to SQLite!", state="complete", expanded=False)
 
@@ -949,7 +949,7 @@ tab_explorer, tab_3hr_compare, tab_analytics, tab_directory, tab_export = st.tab
 # TAB 1: 🔍 MULTI-OPERATOR ROUTE & DATE EXPLORER
 # =============================================================================
 with tab_explorer:
-    st.markdown(f"### 📍 Route: **{selected_origin_name}** $\\rightarrow$ **{selected_dest_name}** | Journey Date: `{selected_doj}`")
+    st.markdown(f"### 📍 Route: **{selected_origin_name}** ➔ **{selected_dest_name}** | Journey Date: `{selected_doj}`")
 
     if snapshots_df.empty:
         with st.container(border=True):
@@ -2011,7 +2011,7 @@ with tab_3hr_compare:
 # TAB 3: 📊 COMPETITOR DYNAMIC PRICING ANALYTICS
 # =============================================================================
 with tab_analytics:
-    st.subheader(f"📊 Market Dynamic Pricing Visual Analytics ({selected_origin_name} $\\rightarrow$ {selected_dest_name})")
+    st.subheader(f"📊 Market Dynamic Pricing Visual Analytics ({selected_origin_name} ➔ {selected_dest_name})")
 
     if snapshots_df.empty:
         st.info("No data available to plot. Select an active route or click 'Refresh & Fetch Live Data'.")
