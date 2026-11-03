@@ -1,0 +1,66 @@
+name: Automated Competitor Fare Scraping & Yield Engine
+
+on:
+  schedule:
+    # Runs 4 times a day (UTC times corresponding to Indian Standard Time UTC+5:30):
+    # 03:00 UTC = 08:30 IST (Morning inventory opening)
+    # 09:00 UTC = 14:30 IST (Midday demand shift)
+    # 14:00 UTC = 19:30 IST (Evening booking rush)
+    # 17:00 UTC = 22:30 IST (Night yield optimization)
+    - cron: '0 3,9,14,17 * * *'
+  workflow_dispatch:
+    # Allows 1-click manual trigger anytime from GitHub Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  run-scraper:
+    name: Scrape Fares & Update Yield Recommendations
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium with OS Dependencies
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Execute Automated Scraping Cycle
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python worker.py --run-now
+
+      - name: Commit and Push Updated Database
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add bus_pricing_intelligence.db
+          if git diff --staged --quiet; then
+            echo "No database changes detected to commit."
+          else
+            git commit -m "chore(data): auto-update fare snapshots [skip ci]"
+            git push
+          fi
+
+      - name: Upload Database Backup Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bus-pricing-database-backup
+          path: bus_pricing_intelligence.db
+          retention-days: 14
