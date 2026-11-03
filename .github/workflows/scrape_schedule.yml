@@ -2,14 +2,8 @@ name: Automated Competitor Fare Scraping & Yield Engine
 
 on:
   schedule:
-    # Runs 4 times a day (UTC times corresponding to Indian Standard Time UTC+5:30):
-    # 03:00 UTC = 08:30 IST (Morning inventory opening)
-    # 09:00 UTC = 14:30 IST (Midday demand shift)
-    # 14:00 UTC = 19:30 IST (Evening booking rush)
-    # 17:00 UTC = 22:30 IST (Night yield optimization)
     - cron: '0 3,9,14,17 * * *'
   workflow_dispatch:
-    # Allows 1-click manual trigger anytime from GitHub Actions tab
 
 permissions:
   contents: write
@@ -33,7 +27,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-worker.txt
 
       - name: Install Playwright Chromium with OS Dependencies
         run: |
